@@ -19,7 +19,7 @@ import net.corda.core.utilities.ProgressTracker.Step
  *
  * In our simple example, the [Acceptor] always accepts a valid Car License and its contents.
  *
- * These flows have deliberately been implemented by using only the call() method for ease of understanding.
+ * The variables that you need to pass into the flow has been deliberately defined as random, which the developer is expected to define.
  *
  * All methods called within the [FlowLogic] sub-class need to be annotated with the @Suspendable annotation.
  */
@@ -27,10 +27,11 @@ import net.corda.core.utilities.ProgressTracker.Step
 object CarLicenseScrapFlow{
     @InitiatingFlow
     @StartableByRPC
-    class Initiator(val LinearId: UniqueIdentifier) : FlowLogic<SignedTransaction>() {
+    class Initiator(val random: String) : FlowLogic<SignedTransaction>() {
         /**
          * The progress tracker throws a string for each stage of the progress
          * See the 'progressTracker.currentStep' expressions within the call() function
+         * NB: You can choose to use or not use these in your code
          */
         companion object {
             object GENERATING_TRANSACTION : Step("Generating transaction based on new Car License.")
@@ -55,43 +56,9 @@ object CarLicenseScrapFlow{
 
         @Suspendable
         override fun call(): SignedTransaction {
-            //Preparing the CarLicenseState input and note that there is no output in Expiry
-            val queryCriteria = QueryCriteria.LinearStateQueryCriteria(linearId = listOf(LinearId))
-            val inputStateAndRef = serviceHub.vaultService.queryBy<CarLicenseState>(queryCriteria).states.single()
-
-            //Restrict the flow to be run by the Issuer only
-            val myIdentity = serviceHub.myInfo.legalIdentities.single()
-            if (inputStateAndRef.state.data.issuer != myIdentity) {
-                throw IllegalArgumentException("Only the issuer of the Car License can scrap")
-            }
-
-            //Create an unsigned Tx
-            progressTracker.currentStep = GENERATING_TRANSACTION
-            val notary = inputStateAndRef.state.notary
-            val scrapSigners = (inputStateAndRef.state.data.participants).map { it.owningKey }
-            val scrapCommand = Command(CarLicenseContract.Commands.Scrap(), scrapSigners)
-            val txBuilder = TransactionBuilder(notary = notary)
-                    .addInputState(inputStateAndRef)
-                    .addCommand(scrapCommand)
-
-            //Verify that the transaction is valid
-            progressTracker.currentStep = VERIFYING_TRANSACTION
-            txBuilder.verify(serviceHub)
-
-            //Sign the transaction before sending to the issuer where ptx = partially signed Tx
-            progressTracker.currentStep = SIGNING_TRANSACTION
-            val ptx = serviceHub.signInitialTransaction(txBuilder)
-
-            //Send the transaction to the counterparty where stx = signed Tx
-            progressTracker.currentStep = GATHERING_SIGS
-            val session = (inputStateAndRef.state.data.participants - myIdentity).map { initiateFlow(it) }
-            val stx = subFlow(CollectSignaturesFlow(ptx, session, GATHERING_SIGS.childProgressTracker()))
-
-            //After you have received the stx from the counterparty, it is time to send to the notary where ftx = fully signed Tx
-            progressTracker.currentStep = FINALISING_TRANSACTION
-            val ftx = subFlow(FinalityFlow(stx, session, FINALISING_TRANSACTION.childProgressTracker()))
-
-            return ftx
+            return serviceHub.signInitialTransaction(
+                    TransactionBuilder(notary = null)
+            )
         }
 
         @InitiatedBy(Initiator::class)
@@ -107,13 +74,6 @@ object CarLicenseScrapFlow{
 
                 return subFlow(ReceiveFinalityFlow(otherPartySession, expectedTxId = txId))
             }
-
         }
-
-
-
     }
-
-
-
 }

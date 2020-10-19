@@ -1,11 +1,8 @@
 package com.example.flow
 
 import co.paralleluniverse.fibers.Suspendable
-import com.review.contract.CarLicenseContract
 import com.review.state.CarLicenseState
-import net.corda.core.contracts.Command
 import net.corda.core.flows.*
-import net.corda.core.identity.Party
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
@@ -17,7 +14,7 @@ import net.corda.core.utilities.ProgressTracker.Step
  *
  * In our simple example, the [Acceptor] who is the issuer always accepts a valid Car License.
  *
- * These flows have deliberately been implemented by using only the call() method for ease of understanding.
+ * The variables that you need to pass into the flow has been deliberately defined as random, which the developer is expected to define
  *
  * All methods called within the [FlowLogic] sub-class need to be annotated with the @Suspendable annotation.
  */
@@ -25,12 +22,12 @@ import net.corda.core.utilities.ProgressTracker.Step
 object CarLicenseIssueFlow {
     @InitiatingFlow
     @StartableByRPC
-    class Initiator(val issuer: Party,
-                    val licensePlate: String): FlowLogic<SignedTransaction>(){
+    class Initiator(val random: String): FlowLogic<SignedTransaction>(){
 
         /**
          * The progress tracker throws a string for each stage of the progress
          * See the 'progressTracker.currentStep' expressions within the call() function
+         * NB: You can choose to use or not use these in your code
          */
         companion object {
             object GENERATING_TRANSACTION : Step("Generating transaction based on new Car License.")
@@ -57,39 +54,9 @@ object CarLicenseIssueFlow {
          */
         @Suspendable
         override fun call(): SignedTransaction {
-            //Preparation creating the state object
-            val myIdentity = serviceHub.myInfo.legalIdentities.single()
-            val newState = CarLicenseState(licensePlate = licensePlate ,issuer = issuer, licensee = myIdentity )
-
-            //Selecting the notary and using the lazy way of selecting the first entry on the list
-            val notary = serviceHub.networkMapCache.notaryIdentities.first()
-
-            //Create an unsigned Tx
-            progressTracker.currentStep = GENERATING_TRANSACTION
-            val issueSigners = newState.participants.map { it.owningKey }
-            val issueCommand = Command(CarLicenseContract.Commands.Create(),issueSigners)
-            val txBuilder = TransactionBuilder(notary)
-                    .addOutputState(newState,CarLicenseContract.ID)
-                    .addCommand(issueCommand)
-
-            //Verify that the transaction is valid
-            progressTracker.currentStep = VERIFYING_TRANSACTION
-            txBuilder.verify(serviceHub)
-
-            //Sign the transaction before sending to the issuer where ptx = partially signed Tx
-            progressTracker.currentStep = SIGNING_TRANSACTION
-            val ptx = serviceHub.signInitialTransaction(txBuilder)
-
-            //Send the transaction to the counterparty where stx = signed Tx
-            progressTracker.currentStep = GATHERING_SIGS
-            val session = (newState.participants - myIdentity).map { initiateFlow(it) }
-            val stx = subFlow(CollectSignaturesFlow(ptx, session, GATHERING_SIGS.childProgressTracker()))
-
-            //After you have received the stx from the counterparty, it is time to send to the notary where ftx = fully signed Tx
-            val ftx = subFlow(FinalityFlow(stx, session, FINALISING_TRANSACTION.childProgressTracker()))
-
-            //return the ftx: signedTransaction to the call
-            return ftx
+            return serviceHub.signInitialTransaction(
+                    TransactionBuilder(notary = null)
+            )
         }
     }
     @InitiatedBy(Initiator::class)

@@ -2,12 +2,6 @@ package com.example.flow;
 
 
 import co.paralleluniverse.fibers.Suspendable;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.review.contract.CarLicenseContract;
-import com.review.state.CarLicenseState;
-import net.corda.core.contracts.Command;
-import net.corda.core.contracts.UniqueIdentifier;
 import net.corda.core.crypto.SecureHash;
 import net.corda.core.flows.*;
 import net.corda.core.identity.Party;
@@ -15,6 +9,8 @@ import net.corda.core.transactions.SignedTransaction;
 import net.corda.core.transactions.TransactionBuilder;
 import net.corda.core.utilities.ProgressTracker;
 import net.corda.core.utilities.ProgressTracker.Step;
+import java.util.Arrays;
+import java.util.List;
 
 
 /**
@@ -23,7 +19,7 @@ import net.corda.core.utilities.ProgressTracker.Step;
  *
  * In our simple example, the [Acceptor] who is the issuer always accepts a valid Car License.
  *
- * These flows have deliberately been implemented by using only the call() method for ease of understanding.
+ * The variables that you need to pass into the flow has been deliberately defined as random, which the developer is expected to define
  *
  * All methods called within the [FlowLogic] sub-class need to be annotated with the @Suspendable annotation.
  */
@@ -32,12 +28,12 @@ public class CarLicenseIssueFlow {
     @StartableByRPC
     public static class Initiator extends FlowLogic<SignedTransaction> {
 
-        private final Party issuer;
-        private final String licensePlate;
+        private final String random;
 
         /**
          * The progress tracker throws a string for each stage of the progress
          * See the 'progressTracker.currentStep' expressions within the call() function
+         * NB: You can choose to use or not use these in your code
          */
         private final Step GENERATING_TRANSACTION = new Step("Generating transaction based on new Car License.");
         private final Step VERIFYING_TRANSACTION = new Step("Verifying contract constraints.");
@@ -63,9 +59,8 @@ public class CarLicenseIssueFlow {
                 FINALISING_TRANSACTION
         );
 
-        public Initiator(Party issuer, String licensePlate) {
-            this.issuer = issuer;
-            this.licensePlate = licensePlate;
+        public Initiator(String random) {
+            this.random = random;
         }
 
         /**
@@ -74,43 +69,14 @@ public class CarLicenseIssueFlow {
         @Suspendable
         @Override
         public SignedTransaction call() throws FlowException {
-            //Preparation creating the state object
-            Party myIdentity = getOurIdentity();
-            CarLicenseState newState = new CarLicenseState(licensePlate, issuer, myIdentity, new UniqueIdentifier());
-
-            //Selecting the notary and using the lazy way of selecting the first entry on the list
-            progressTracker.setCurrentStep(GENERATING_TRANSACTION);
+            /**
+             * This is a mock function to prevent errors. Delete the body of the function before starting development.
+             * */
             final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
-
-            final Command<CarLicenseContract.Commands.Create> issueCommand = new Command<>(
-                    new CarLicenseContract.Commands.Create(),
-                    ImmutableList.of(newState.getIssuer().getOwningKey(), newState.getLicensee().getOwningKey()));
-            final TransactionBuilder txBuilder = new TransactionBuilder(notary)
-                    .addOutputState(newState, CarLicenseContract.ID)
-                    .addCommand(issueCommand);
-
-            //Verify that the transaction is valid
-            progressTracker.setCurrentStep(VERIFYING_TRANSACTION);
-            txBuilder.verify(getServiceHub());
-
-            //Sign the transaction before sending to the issuer where ptx = partially signed Tx
-            progressTracker.setCurrentStep(SIGNING_TRANSACTION);
-            final SignedTransaction ptx = getServiceHub().signInitialTransaction(txBuilder);
-
-            //Send the transaction to the counterparty where stx = signed Tx
-            progressTracker.setCurrentStep(GATHERING_SIGS);
-            FlowSession otherPartySession = initiateFlow(issuer);
-            final SignedTransaction stx = subFlow(
-                    new CollectSignaturesFlow(ptx, ImmutableSet.of(otherPartySession), CollectSignaturesFlow.Companion.tracker())
-            );
-
-            //After you have received the stx from the counterparty, it is time to send to the notary where ftx = fully signed Tx
-            progressTracker.setCurrentStep(FINALISING_TRANSACTION);
-            final SignedTransaction ftx = subFlow(
-                    new FinalityFlow(stx, ImmutableSet.of(otherPartySession), FinalityFlow.Companion.tracker())
-            );
-
-            return ftx;
+            final TransactionBuilder builder = new TransactionBuilder(notary);
+            final SignedTransaction ptx = getServiceHub().signInitialTransaction(builder);
+            final List<FlowSession> sessions = Arrays.asList(initiateFlow(getOurIdentity()));
+            return subFlow(new FinalityFlow(ptx, sessions));
         }
 
         @InitiatedBy(CarLicenseIssueFlow.Initiator.class)
